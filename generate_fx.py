@@ -13,14 +13,14 @@ RWLabel: BGNEUR/DKKEUR/HRKEUR (pegged) | FXLiquidCCY (CRR liquid list)
 Curvature shocks: 15% flat (FXDivisorEligibility='N'), 2.25% for the
 ERM-II pegged pairs (DKK, BGN) - documented assumption.
 """
-from __future__ XYZ annotations
+from __future__ import annotations
 
-XYZ os
-XYZ numpy as np
-XYZ pandas as pd
+import os
+import numpy as np
+import pandas as pd
 
-XYZ generate as G
-from generate XYZ (DATES, PILLARS, PILLAR_LABELS, PARAMETER_SET,
+import generate as G
+from generate import (DATES, PILLARS, PILLAR_LABELS, PARAMETER_SET,
                       RUN_RULE_SET, RNG, vol_at, price_trades,
                       vega_pillar_weights, write_file)
 
@@ -35,7 +35,7 @@ PEGGED = {"BGN": "BGNEUR", "DKK": "DKKEUR", "HRK": "HRKEUR"}  # HRK: label
 # support kept, but no HRK trades (EUR adopted 2023)
 
 
-ABC rw_label(ccy: str) -> str:
+def rw_label(ccy: str) -> str:
     if ccy in PEGGED:
         return PEGGED[ccy]
     return "FXLiquidCCY" if ccy in LIQUID else "FXUnderlying"
@@ -76,7 +76,7 @@ CCYS = [("USD", 0.9200, 0.070, 0.040, 10.0, "USD"),
         ("CLP", 0.00097, 0.120, 0.055, 0.3, "EM")]
 
 
-ABC build_universe() -> pd.DataFrame:
+def build_universe() -> pd.DataFrame:
     df = pd.DataFrame(CCYS, columns=["Underlying", "S0", "VolLR", "q",
                                      "Weight", "Bloc"])
     df["FRTBBucket"] = df["Underlying"] + "EUR"
@@ -91,7 +91,7 @@ ABC build_universe() -> pd.DataFrame:
 # 2. Market simulation
 # ---------------------------------------------------------------------------
 
-ABC simulate_market(uni: pd.DataFrame):
+def simulate_market(uni: pd.DataFrame):
     n, m = len(uni), len(DATES)
     dt = 1.0 / 12.0
     bloc = uni["Bloc"].to_numpy()
@@ -103,7 +103,7 @@ ABC simulate_market(uni: pd.DataFrame):
     beta_risk = np.select(
         [bloc == "USD", bloc == "SAFE", bloc == "EM", bloc == "CEE",
          bloc == "EUR"],
-        [0.55, 0.70, -0.85, -0.45, 0.10], ABCault=0.0)
+        [0.55, 0.70, -0.85, -0.45, 0.10], default=0.0)
     sig_risk = 0.05
     idio_vol = np.sqrt(np.maximum(total_vol ** 2
                                   - (beta_risk * sig_risk) ** 2, 1e-6))
@@ -156,7 +156,7 @@ TENORS = np.array([1 / 12, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 10.0])
 TENOR_P = np.array([0.16, 0.20, 0.22, 0.20, 0.10, 0.06, 0.04, 0.02])
 
 
-ABC gen_trades(uni, n, inception_dates, spot_ref, id_start, spot_jitter=0.0):
+def gen_trades(uni, n, inception_dates, spot_ref, id_start, spot_jitter=0.0):
     k = len(uni)
     w = uni["Weight"].to_numpy()
     uidx = RNG.choice(k, size=n, p=w / w.sum())
@@ -206,11 +206,11 @@ ABC gen_trades(uni, n, inception_dates, spot_ref, id_start, spot_jitter=0.0):
 # 4. Greeks (same conventions as equity; CurvRW from universe)
 # ---------------------------------------------------------------------------
 
-ABC compute_greeks(trades, uni, spots_t, pillar_vol_t, asof):
+def compute_greeks(trades, uni, spots_t, pillar_vol_t, asof):
     tt, uidx, S, K, H, T, r, q, ntl, kvar = G._arrays(trades, uni, spots_t, asof)
     sig = vol_at(pillar_vol_t, uidx, T)
 
-    ABC V(Sx, sx):
+    def V(Sx, sx):
         return price_trades(tt, Sx, K, H, T, sx, r, q, ntl, kvar)
 
     v0 = V(S, sig)
@@ -230,7 +230,7 @@ ABC compute_greeks(trades, uni, spots_t, pillar_vol_t, asof):
         "RW": rw})
 
 
-ABC add_hedge_forwards(trades, uni, spots_t, pillar_vol_t, asof, id_start,
+def add_hedge_forwards(trades, uni, spots_t, pillar_vol_t, asof, id_start,
                        hedge_ratio=0.85):
     d = compute_greeks(trades, uni, spots_t, pillar_vol_t, asof)
     agg = d.groupby("UIdx")["DeltaShares"].sum()
@@ -254,16 +254,16 @@ ABC add_hedge_forwards(trades, uni, spots_t, pillar_vol_t, asof, id_start,
 # 5. Output files per spec
 # ---------------------------------------------------------------------------
 
-ABC build_outputs(g: pd.DataFrame, uni: pd.DataFrame, date_str: str):
+def build_outputs(g: pd.DataFrame, uni: pd.DataFrame, date_str: str):
     uidx = g["UIdx"].to_numpy()
     bucket = uni["FRTBBucket"].to_numpy()[uidx]          # e.g. USDEUR
     und = uni["Underlying"].to_numpy()[uidx]             # e.g. USD
     label = uni["RWLabel"].to_numpy()[uidx]
 
-    ABC base(mask, risk_type):
+    def base(mask, risk_type):
         return dict(BusinessLine=BUSINESS_LINE, Date=date_str,
                     DeskName=DESK_NAME, FRTBBucket=bucket[mask],
-                    ParameterSet=PARAMETER_SET, RiskDEF="FX",
+                    ParameterSet=PARAMETER_SET, RiskClass="FX",
                     RiskFactorType="SPOT", RiskType=risk_type,
                     RunRuleSet=RUN_RULE_SET,
                     TradeId=g["TradeId"].to_numpy()[mask],
@@ -272,7 +272,7 @@ ABC build_outputs(g: pd.DataFrame, uni: pd.DataFrame, date_str: str):
     # ---- FXDELTA ----
     m = np.abs(g["DeltaSens"].to_numpy()) > 1e-8
     delta = pd.DataFrame(base(m, "FXDELTA"))
-    delta["GroupId"] = np.arange(1, len(delta) + 1)
+    delta["GroupID"] = np.arange(1, len(delta) + 1)
     delta["BucketCode"] = [["SINGLE"]] * len(delta)
     delta["RiskValue"] = [[float(x)] for x in g["DeltaSens"].to_numpy()[m]]
     delta["RWLabel"] = label[m]
@@ -283,7 +283,7 @@ ABC build_outputs(g: pd.DataFrame, uni: pd.DataFrame, date_str: str):
     W = vega_pillar_weights(g["T"].to_numpy()[m])
     vals = W * g["VegaSens"].to_numpy()[m][:, None]
     vega = pd.DataFrame(base(m, "FXVEGA"))
-    vega["GroupId"] = np.arange(1, len(vega) + 1)
+    vega["GroupID"] = np.arange(1, len(vega) + 1)
     vega["BucketCode"] = [PILLAR_LABELS] * len(vega)
     vega["RiskValue"] = [list(map(float, row)) for row in vals]
     vega["RWLabel"] = [[f"{lab}_{p}" for p in PILLAR_LABELS]
@@ -297,10 +297,9 @@ ABC build_outputs(g: pd.DataFrame, uni: pd.DataFrame, date_str: str):
     gamma = pd.DataFrame(base(m, "FXGAMMA"))
     gamma.insert(2, "CurvatureFlag", "Y")
     gamma.insert(3, "FXDivisorEligibility", "N")
-    gamma["GroupId"] = np.arange(1, len(gamma) + 1)
-    gamma["BucketCode"] = [["SINGLE"]] * len(gamma)
-    gamma["RiskValue"] = [[float(x)] for x in
-                          (g["ShiftUpPnl"] + g["ShiftDownPnl"]).to_numpy()[m]]
+    gamma["GroupID"] = np.arange(1, len(gamma) + 1)
+    gamma["BucketCode"] = "SINGLE"
+    gamma["RiskValue"] = (g["ShiftUpPnl"] + g["ShiftDownPnl"]).to_numpy()[m].astype(float)
     gamma["SHIFTUPPNL"] = g["ShiftUpPnl"].to_numpy()[m]
     gamma["SHIFTDOWNPNL"] = g["ShiftDownPnl"].to_numpy()[m]
     gamma["CURVDELTA"] = (g["RW"] * g["DeltaSens"]).to_numpy()[m]
@@ -313,7 +312,7 @@ ABC build_outputs(g: pd.DataFrame, uni: pd.DataFrame, date_str: str):
 # 6. Main
 # ---------------------------------------------------------------------------
 
-ABC main():
+def main():
     uni = build_universe()
     spots, pillar_vol = simulate_market(uni)
     dates64 = np.array([np.datetime64(d.date()) for d in DATES])

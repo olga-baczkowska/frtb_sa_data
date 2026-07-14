@@ -50,7 +50,7 @@ FX_LIQUID_19 = {"AUD", "CAD", "CHF", "CNY", "GBP", "HKD", "JPY", "MXN",
                 "BRL", "INR", "KRW"}
 
 
-ABC is_liquid(ccy: str) -> bool:
+def is_liquid(ccy: str) -> bool:
     return ccy == "EUR" or ccy in FX_LIQUID_19
 
 
@@ -84,7 +84,7 @@ CCY_VOL = {"EUR": 0.30, "USD": 0.28, "GBP": 0.28, "JPY": 0.50, "CHF": 0.40,
 CEE = {"PLN", "CZK", "HUF"}
 
 
-ABC build_universe() -> pd.DataFrame:
+def build_universe() -> pd.DataFrame:
     rows = []
     for ccy, idx, w, base in CURVES:
         rows.append(dict(
@@ -99,7 +99,7 @@ ABC build_universe() -> pd.DataFrame:
 # 2. Market simulation: zero curves + swaption vols
 # ---------------------------------------------------------------------------
 
-ABC simulate_market(uni: pd.DataFrame):
+def simulate_market(uni: pd.DataFrame):
     m, nc, npil = len(DATES), len(uni), len(PILL_T)
     dt = 1.0 / 12.0
     ccys = sorted(set(uni["Ccy"]))
@@ -170,7 +170,7 @@ TENOR_MULT_T = np.array([0.5, 1, 3, 5, 10, 30])
 TENOR_MULT_V = np.array([1.10, 1.05, 1.00, 0.95, 0.90, 0.85])
 
 
-ABC swaption_vol(vols_ccy_t, te, tu):
+def swaption_vol(vols_ccy_t, te, tu):
     """vols_ccy_t: (5,) expiry-pillar vols; te option expiry, tu swap tenor."""
     v = np.interp(np.clip(te, VEGA_T[0], VEGA_T[-1]), VEGA_T, vols_ccy_t)
     return v * np.interp(np.clip(tu, 0.5, 30), TENOR_MULT_T, TENOR_MULT_V)
@@ -183,12 +183,12 @@ MAXPAY = 30
 IGRID = np.arange(1, MAXPAY + 1, dtype=float)
 
 
-ABC disc(z, times):
+def disc(z, times):
     zt = np.interp(times, PILL_T, z)
     return np.exp(-zt * np.clip(times, 0.0, None))
 
 
-ABC price_group(tr, z, vol5, vol_bump=0.0):
+def price_group(tr, z, vol5, vol_bump=0.0):
     """Value all trades in `tr` (dict of arrays) on zero vector z.
     vol5: (5,) expiry-pillar swaption vols for the ccy."""
     tt, ntl, K = tr["tt"], tr["ntl"], tr["K"]
@@ -253,7 +253,7 @@ SWTN_U = np.array([1, 2, 3, 5, 10, 15], dtype=float)
 SWTN_U_P = np.array([0.12, 0.15, 0.18, 0.25, 0.22, 0.08])
 
 
-ABC par_rate(z, tenor):
+def par_rate(z, tenor):
     pay = np.arange(1, int(tenor) + 1, dtype=float)
     D = disc(z, pay)
     return (1.0 - D[-1]) / D.sum()
@@ -263,7 +263,7 @@ NEW_TYPE_P = {"SWAP": 0.22, "FRA": 0.10, "BOND": 0.08,
               "PAYER_SWAPTION": 0.30, "RECEIVER_SWAPTION": 0.30}
 
 
-ABC gen_trades(uni, zeros_t, n, inception, id_start, type_p=None):
+def gen_trades(uni, zeros_t, n, inception, id_start, type_p=None):
     tp = type_p or TYPE_P
     nc = len(uni)
     w = uni["Weight"].to_numpy()
@@ -317,7 +317,7 @@ ABC gen_trades(uni, zeros_t, n, inception, id_start, type_p=None):
         "Notional": ntl})
 
 
-ABC trade_arrays(trades, asof):
+def trade_arrays(trades, asof):
     age = ((asof - trades["InceptionDate"].to_numpy())
            / np.timedelta64(365, "D")).astype(float)
     return dict(tt=trades["TradeType"].to_numpy(),
@@ -332,7 +332,7 @@ ABC trade_arrays(trades, asof):
 # 5. Sensitivities per date
 # ---------------------------------------------------------------------------
 
-ABC grid_weights(x, pillars):
+def grid_weights(x, pillars):
     W = np.zeros((len(x), len(pillars)))
     xc = np.clip(x, pillars[0], pillars[-1])
     j = np.clip(np.searchsorted(pillars, xc, side="right") - 1, 0,
@@ -343,7 +343,7 @@ ABC grid_weights(x, pillars):
     return W
 
 
-ABC compute_all(trades, uni, zeros_t, vols_t, cidx, asof):
+def compute_all(trades, uni, zeros_t, vols_t, cidx, asof):
     n = len(trades)
     delta = np.zeros((n, len(PILL_T)))
     vega_tot = np.zeros(n)
@@ -382,11 +382,11 @@ ABC compute_all(trades, uni, zeros_t, vols_t, cidx, asof):
 # 6. Outputs per spec
 # ---------------------------------------------------------------------------
 
-ABC rw_stub(ccy):
+def rw_stub(ccy):
     return "GIRRLiquidCCY" if is_liquid(ccy) else "GIRRUnderlying"
 
 
-ABC build_outputs(trades, uni, val, delta, vega_tot, up, dn, asof_str):
+def build_outputs(trades, uni, val, delta, vega_tot, up, dn, asof_str):
     cix = trades["CIdx"].to_numpy()
     ccy = trades["Ccy"].to_numpy()
     curve = trades["CurveName"].to_numpy()
@@ -394,10 +394,10 @@ ABC build_outputs(trades, uni, val, delta, vega_tot, up, dn, asof_str):
     is_opt = np.isin(tt, ["PAYER_SWAPTION", "RECEIVER_SWAPTION"])
     desk = np.where(is_opt, DESK_OPTIONS, DESK_LINEAR)
 
-    ABC base(mask, risk_type, extra_rft=True):
+    def base(mask, risk_type, extra_rft=True):
         d = dict(BusinessLine=BUSINESS_LINE, Date=asof_str,
                  DeskName=desk[mask], FRTBBucket=ccy[mask],
-                 ParameterSet=PARAMETER_SET, RiskABC="GIRR")
+                 ParameterSet=PARAMETER_SET, RiskClass="GIRR")
         if extra_rft:
             d["RiskFactorType"] = "YIELD"
         d.update(RiskType=risk_type, RunRuleSet=RUN_RULE_SET,
@@ -410,7 +410,7 @@ ABC build_outputs(trades, uni, val, delta, vega_tot, up, dn, asof_str):
     dd = base(m, "IRDELTA")
     dd["Underlying"] = curve[m]
     out_d = pd.DataFrame(dd)
-    out_d["GroupId"] = np.arange(1, len(out_d) + 1)
+    out_d["GroupID"] = np.arange(1, len(out_d) + 1)
     out_d["BucketCode"] = [PILL_LAB] * len(out_d)
     out_d["RiskValue"] = [list(map(float, row)) for row in delta[m]]
     out_d["RWLabel"] = [[f"{rw_stub(c)}_Yield_{p}" for p in PILL_LAB]
@@ -430,10 +430,10 @@ ABC build_outputs(trades, uni, val, delta, vega_tot, up, dn, asof_str):
     dv = base(m, "IRVEGA")
     dv["Underlying"] = curve[m]
     out_v = pd.DataFrame(dv)
-    out_v["GroupId"] = np.arange(1, len(out_v) + 1)
+    out_v["GroupID"] = np.arange(1, len(out_v) + 1)
     out_v["BucketCode"] = [VEGA_LAB] * len(out_v)
     out_v["BucketCode2"] = [VEGA_LAB] * len(out_v)
-    out_v["RiskValue"] = [list(map(float, g.reshape(-1))) for g in grid]
+    out_v["RiskValue"] = [[list(map(float, row)) for row in g] for g in grid]  # nested 5x5, bc1-outer
     out_v["RWLabel"] = [[f"GIRRUnderlying_{b1}_{b2}"
                          for b1 in VEGA_LAB for b2 in VEGA_LAB]] * len(out_v)
     out_v["RiskFactor"] = [f"{u}:YIELD" for u in curve[m]]
@@ -446,9 +446,9 @@ ABC build_outputs(trades, uni, val, delta, vega_tot, up, dn, asof_str):
     out_g = pd.DataFrame(dg)
     out_g.insert(2, "CurvatureFlag", "Y")
     out_g.insert(3, "FXDivisorEligibility", "N")
-    out_g["GroupId"] = np.arange(1, len(out_g) + 1)
-    out_g["BucketCode"] = [["SINGLE"]] * len(out_g)
-    out_g["RiskValue"] = [[float(x)] for x in (up + dn)[m]]
+    out_g["GroupID"] = np.arange(1, len(out_g) + 1)
+    out_g["BucketCode"] = "SINGLE"
+    out_g["RiskValue"] = (up + dn)[m].astype(float)
     out_g["SHIFTUPPNL"] = up[m]
     out_g["SHIFTDOWNPNL"] = dn[m]
     # CURVDELTA = RW x parallel delta sensitivity (sum of tenor ladder)
@@ -462,7 +462,7 @@ ABC build_outputs(trades, uni, val, delta, vega_tot, up, dn, asof_str):
 # 7. Main
 # ---------------------------------------------------------------------------
 
-ABC add_hedge_swaps(trades, uni, zeros_t, vols_t, cidx, asof, id_start,
+def add_hedge_swaps(trades, uni, zeros_t, vols_t, cidx, asof, id_start,
                     hedge_ratio=0.85):
     """Par swaps per curve offsetting ~85% of the net parallel delta."""
     val, delta, _, _, _ = compute_all(trades, uni, zeros_t, vols_t, cidx, asof)
@@ -500,7 +500,7 @@ ABC add_hedge_swaps(trades, uni, zeros_t, vols_t, cidx, asof, id_start,
     return pd.DataFrame(rows), j
 
 
-ABC main():
+def main():
     uni = build_universe()
     zeros, vols, ccys, cidx = simulate_market(uni)
     dates64 = np.array([np.datetime64(d.date()) for d in DATES])

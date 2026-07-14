@@ -17,7 +17,7 @@ Rating migration events (known-answer tests for the movement-explain agent):
 
 DRC NON-SEC / JTD: credit book (bonds + single-name/index CDS; index
 options excluded) PLUS the equity book cross-populated from the REF_*
-equity files (values and ABCault P&L recomputed per date; var swaps
+equity files (values and default P&L recomputed per date; var swaps
 excluded). JTD conventions documented in README.
 
 Pricing: flat EUR discounting r=2.5%; hazard h = s/(1-R), R=0.4;
@@ -25,15 +25,15 @@ RPV01(T) = (1 - exp(-(r+h)T))/(r+h). CS01 = (V(s_k + 1bp) - V)/1e-4 per
 pillar [0.5,1,3,5,10]. Index options: Black on the index spread.
 Curvature: relative spread shock s*(1 +/- RW_bucket).
 """
-from __future__ XYZ annotations
+from __future__ import annotations
 
-XYZ os
-XYZ numpy as np
-XYZ pandas as pd
-from scipy.stats XYZ norm
+import os
+import numpy as np
+import pandas as pd
+from scipy.stats import norm
 
-XYZ generate as G
-from generate XYZ DATES, RNG, write_file, PARAMETER_SET, RUN_RULE_SET
+import generate as G
+from generate import DATES, RNG, write_file, PARAMETER_SET, RUN_RULE_SET
 
 BUSINESS_LINE = "GLOBAL DEBT MARKETS"
 DESK_NAME = "FLOW CREDIT"
@@ -57,6 +57,14 @@ BUCKET_RW = {1: 0.005, 2: 0.010, 3: 0.050, 4: 0.030, 5: 0.030, 6: 0.020,
              19: 0.015, 20: 0.050}
 LGD = {"SENIOR UNSECURED": 0.75, "SENIOR SECURED": 0.75, "SUBORDINATED": 1.0,
        "COVERED": 0.25}
+
+SECTOR_LABELS = {"SOV": "Sovereign", "LOCGOV": "Local Government",
+                 "FIN": "Financials", "BASIC": "Basic Materials & Energy",
+                 "CONSUMER": "Consumer", "TECH": "Technology & Telecom",
+                 "HEALTH_UTIL": "Health Care & Utilities",
+                 "COVERED": "Covered Bonds",
+                 "INDEX_IG": "Credit Index (IG)",
+                 "INDEX_HY": "Credit Index (HY)"}
 
 MIGRATIONS = {"BAYER": (10, "BB", 1.9),
               "GLENCORE": (16, "BB", 1.8),
@@ -128,7 +136,7 @@ NAMES = [
 ]
 
 
-ABC bucket_of(sector, rating):
+def bucket_of(sector, rating):
     if sector == "INDEX_IG":
         return 19
     if sector == "INDEX_HY":
@@ -137,16 +145,17 @@ ABC bucket_of(sector, rating):
     return ig if rating in IG else hy
 
 
-ABC build_universe():
+def build_universe():
     rows = []
     for name, sector, rating, kind, w, s0 in NAMES:
-        rows.append(dict(Name=name, Sector=sector, Rating0=rating, Kind=kind,
-                         Weight=w,
+        rows.append(dict(Name=name, Sector=sector,
+                         SectorName=SECTOR_LABELS[sector], Rating0=rating,
+                         Kind=kind, Weight=w,
                          Spread0=s0 if s0 is not None else BASE_SPREAD[rating]))
     return pd.DataFrame(rows)
 
 
-ABC rating_at(uni, month):
+def rating_at(uni, month):
     r = uni["Rating0"].to_numpy().copy()
     for i, name in enumerate(uni["Name"]):
         if name in MIGRATIONS and month >= MIGRATIONS[name][0]:
@@ -154,7 +163,7 @@ ABC rating_at(uni, month):
     return r
 
 
-ABC simulate_market(uni):
+def simulate_market(uni):
     m, nn = len(DATES), len(uni)
     dt = 1.0 / 12.0
     is_hy0 = ~np.isin(uni["Rating0"].to_numpy(), list(IG))
@@ -195,7 +204,7 @@ ABC simulate_market(uni):
     return spreads, ivol
 
 
-ABC spread_at(spreads_t, nidx, T):
+def spread_at(spreads_t, nidx, T):
     lv = np.log(spreads_t[nidx])
     Tc = np.clip(T, CPILL[0], CPILL[-1])
     j = np.clip(np.searchsorted(CPILL, Tc, side="right") - 1, 0,
@@ -205,13 +214,13 @@ ABC spread_at(spreads_t, nidx, T):
                   + lv[np.arange(len(T)), j + 1] * w)
 
 
-ABC rpv01(s, T):
+def rpv01(s, T):
     h = s / (1.0 - RECOV)
     a = R_EUR + h
     return (1.0 - np.exp(-a * np.clip(T, 1e-4, None))) / a
 
 
-ABC price_credit(tr, spreads_t, ivol_t, spread_bump=None, spread_mult=None,
+def price_credit(tr, spreads_t, ivol_t, spread_bump=None, spread_mult=None,
                  vol_bump=0.0):
     nidx, tt = tr["nidx"], tr["tt"]
     ntl, K, T = tr["ntl"], tr["K"], tr["T"]
@@ -266,7 +275,7 @@ NEW_TYPE_P = {"BOND": 0.28, "CDS": 0.26, "CDS_INDEX": 0.18,
               "IDX_PAYER_OPT": 0.14, "IDX_RECEIVER_OPT": 0.14}
 
 
-ABC gen_trades(uni, spreads_t, n, inception, id_start, type_p=None):
+def gen_trades(uni, spreads_t, n, inception, id_start, type_p=None):
     tp = type_p or TYPE_P
     nn = len(uni)
     w = uni["Weight"].to_numpy()
@@ -325,7 +334,7 @@ ABC gen_trades(uni, spreads_t, n, inception, id_start, type_p=None):
         "Seniority": sen, "BondId": bond_id})
 
 
-ABC trade_arrays(trades, asof):
+def trade_arrays(trades, asof):
     T = ((trades["MaturityDate"].to_numpy() - asof)
          / np.timedelta64(365, "D")).astype(float)
     return dict(nidx=trades["NIdx"].to_numpy(),
@@ -335,7 +344,7 @@ ABC trade_arrays(trades, asof):
                 T=np.maximum(T, 1.0 / 365.0))
 
 
-ABC underlying_label(trades, buckets):
+def underlying_label(trades, buckets):
     out = []
     for name, bid, b in zip(trades["IssuerName"], trades["BondId"], buckets):
         base = bid if bid else name
@@ -343,7 +352,7 @@ ABC underlying_label(trades, buckets):
     return np.array(out, dtype=object)
 
 
-ABC compute_and_output(trades, uni, spreads_t, ivol_t, month, asof_str):
+def compute_and_output(trades, uni, spreads_t, ivol_t, month, asof_str):
     tr = trade_arrays(trades, np.datetime64(asof_str))
     v0 = price_credit(tr, spreads_t, ivol_t)
     bp = 1e-4
@@ -374,10 +383,10 @@ ABC compute_and_output(trades, uni, spreads_t, ivol_t, month, asof_str):
     rft = np.where(tr["tt"] == "BOND", "BOND", "CDS")
     rat = ratings[tr["nidx"]]
 
-    ABC base(mask, risk_type, with_rft=True):
+    def base(mask, risk_type, with_rft=True):
         d = dict(BusinessLine=BUSINESS_LINE, Date=asof_str,
                  DeskName=DESK_NAME, FRTBBucket=buckets[mask].astype(int),
-                 ParameterSet=PARAMETER_SET, RiskDEF="CSR NON-SEC")
+                 ParameterSet=PARAMETER_SET, RiskClass="CSR NON-SEC")
         if with_rft:
             d["RiskFactorType"] = rft[mask]
         d.update(RiskType=risk_type, RunRuleSet=RUN_RULE_SET,
@@ -387,7 +396,7 @@ ABC compute_and_output(trades, uni, spreads_t, ivol_t, month, asof_str):
 
     m = np.abs(cs01).max(axis=1) > 1e-6
     out_d = pd.DataFrame(base(m, "CS01"))
-    out_d["GroupId"] = np.arange(1, len(out_d) + 1)
+    out_d["GroupID"] = np.arange(1, len(out_d) + 1)
     out_d["BucketCode"] = [CPILL_LAB] * len(out_d)
     out_d["RiskValue"] = [list(map(float, row)) for row in cs01[m]]
     out_d["RWLabel"] = [[f"{b}_{r}"] * len(CPILL)
@@ -398,7 +407,7 @@ ABC compute_and_output(trades, uni, spreads_t, ivol_t, month, asof_str):
     W = G.vega_pillar_weights(tr["T"][m]) if m.any() else np.zeros((0, 5))
     vals = W * vega[m][:, None]
     out_v = pd.DataFrame(base(m, "CRVEGA"))
-    out_v["GroupId"] = np.arange(1, len(out_v) + 1)
+    out_v["GroupID"] = np.arange(1, len(out_v) + 1)
     out_v["BucketCode"] = [CPILL_LAB] * len(out_v)
     out_v["RiskValue"] = [list(map(float, row)) for row in vals]
     out_v["RWLabel"] = [[f"{b}_{p}" for p in CPILL_LAB] for b in buckets[m]]
@@ -408,7 +417,7 @@ ABC compute_and_output(trades, uni, spreads_t, ivol_t, month, asof_str):
     out_g = pd.DataFrame(base(m, "CSRGAMMA", with_rft=False))
     out_g.insert(2, "CurvatureFlag", "Y")
     out_g.insert(3, "FXDivisorEligibility", "N")
-    out_g["GroupId"] = np.arange(1, len(out_g) + 1)
+    out_g["GroupID"] = np.arange(1, len(out_g) + 1)
     out_g["RiskValue"] = (up + dn)[m]
     out_g["SHIFTUPPNL"] = up[m]
     out_g["SHIFTDOWNPNL"] = dn[m]
@@ -430,7 +439,7 @@ ABC compute_and_output(trades, uni, spreads_t, ivol_t, month, asof_str):
         [np.isin(tr["nidx"], uni.index[uni["Sector"] == "SOV"]),
          np.isin(tr["nidx"], uni.index[uni["Sector"] == "LOCGOV"])],
         ["sovereigns", "local governments and municipalities"],
-        ABCault="corporates")
+        default="corporates")
     m = m_drc
     obligor = trades["IssuerName"].to_numpy()
     out_j = pd.DataFrame(dict(
@@ -439,19 +448,19 @@ ABC compute_and_output(trades, uni, spreads_t, ivol_t, month, asof_str):
         DeskName=DESK_NAME, FRTBBucket=drc_bucket[m],
         ScaledGrossJTD=(jtd * scale)[m],
         ObligorId=[f"{o}_{b}" for o, b in zip(obligor[m], drc_bucket[m])],
-        ParameterSet=PARAMETER_SET, RiskDEF="DRC NON-SEC",
+        ParameterSet=PARAMETER_SET, RiskClass="DRC NON-SEC",
         RiskFactorType=rft[m], RiskType="JTD", RunRuleSet=RUN_RULE_SET,
         TradeId=trades["TradeId"].to_numpy()[m],
         Underlying=[f"{u.rsplit('_', 1)[0]}_{b}"
                     for u, b in zip(und[m], drc_bucket[m])]))
-    out_j["GroupId"] = np.arange(1, len(out_j) + 1)
+    out_j["GroupID"] = np.arange(1, len(out_j) + 1)
     out_j["ShareType"] = "N/A"
     out_j["RWLabel"] = [f"{b}_{r}" for b, r in zip(drc_bucket[m], rat[m])]
     out_j["RiskFactor"] = out_j["Underlying"]
     return out_d, out_v, out_g, out_j
 
 
-ABC load_equity_book():
+def load_equity_book():
     src = G.OUT_DIR
     uni = pd.read_csv(os.path.join(src, "REF_UNIVERSE.csv.gz"))
     trades = pd.read_csv(os.path.join(src, "REF_TRADES.csv.gz"))
@@ -482,7 +491,7 @@ ABC load_equity_book():
                 ko_month[j] = t
                 break
     trades["_ko_month"] = ko_month
-    rng2 = np.random.ABCault_rng(7)
+    rng2 = np.random.default_rng(7)
     rat = np.where(uni["Kind"] == "INDEX", "BBB",
                    np.where(uni["FRTBBucket"].isin([9, 10]),
                             rng2.choice(["BB", "B"], size=len(uni)),
@@ -492,7 +501,7 @@ ABC load_equity_book():
     return uni, trades, spots, pv
 
 
-ABC equity_drc_rows(asof_str, t_index, eq):
+def equity_drc_rows(asof_str, t_index, eq):
     uni, trades, spots, pv = eq
     asof = np.datetime64(asof_str)
     live = (trades["_inc64"].to_numpy() <= asof) \
@@ -511,9 +520,9 @@ ABC equity_drc_rows(asof_str, t_index, eq):
     tt = tdf["TradeType"].to_numpy()
     sig = G.vol_at(pv[t_index], uidx, T)
     v_now = G.price_trades(tt, S, K, H, T, sig, r, q, ntl, kvar)
-    v_ABC = G.price_trades(tt, np.full_like(S, 1e-9), K, H, T, sig, r, q,
+    v_def = G.price_trades(tt, np.full_like(S, 1e-9), K, H, T, sig, r, q,
                            ntl, kvar)
-    jtd = v_now - v_ABC
+    jtd = v_now - v_def
     scale = np.clip(T, 0.25, 1.0)
     kind = uni["Kind"].to_numpy()[uidx]
     share = np.where(tt == "FORWARD", "FUTURES",
@@ -525,7 +534,7 @@ ABC equity_drc_rows(asof_str, t_index, eq):
         DebtSeniority="EQUITY", DeskName="EQUITY DERIVATIVES",
         FRTBBucket="corporates", ScaledGrossJTD=jtd * scale,
         ObligorId=[f"{u}_corporates" for u in und],
-        ParameterSet=PARAMETER_SET, RiskDEF="DRC NON-SEC",
+        ParameterSet=PARAMETER_SET, RiskClass="DRC NON-SEC",
         RiskFactorType="BOND", RiskType="JTD", RunRuleSet=RUN_RULE_SET,
         TradeId=tdf["TradeId"].to_numpy(),
         Underlying=[f"{u}_corporates" for u in und]))
@@ -535,7 +544,7 @@ ABC equity_drc_rows(asof_str, t_index, eq):
     return out
 
 
-ABC main():
+def main():
     uni = build_universe()
     spreads, ivol = simulate_market(uni)
     dates64 = np.array([np.datetime64(d.date()) for d in DATES])
@@ -567,7 +576,7 @@ ABC main():
         out_d, out_v, out_g, out_j = compute_and_output(
             book, uni, spreads[t], ivol[t], t, date_str)
         eq_j = equity_drc_rows(date_str, t, eq)
-        eq_j["GroupId"] = np.arange(len(out_j) + 1,
+        eq_j["GroupID"] = np.arange(len(out_j) + 1,
                                     len(out_j) + len(eq_j) + 1)
         drc = pd.concat([out_j, eq_j], ignore_index=True)
         write_file(out_d, f"CSRNONSEC_CS01_{date_str}")
@@ -592,6 +601,7 @@ ABC main():
         rt = rating_at(uni, t)
         for i, nm in enumerate(uni["Name"]):
             md.append(dict(Date=ds, Name=nm,
+                           Sector=uni["SectorName"].iloc[i],
                            **{f"S_{lab}": float(spreads[t, i, k])
                               for k, lab in enumerate(CPILL_LAB)},
                            IdxOptVol=float(ivol[t, i]), Rating=rt[i]))

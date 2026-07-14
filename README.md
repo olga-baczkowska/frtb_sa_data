@@ -275,3 +275,42 @@ index option vols + rating per name per date), `REF_CSR_UNIVERSE`,
 8. Pricing simplifications: flat EUR discounting (no GIRR cross-population),
    flat recovery 0.40 in hazard conversion, index option forward spread
    proxied by the 5Y pillar.
+
+
+---
+
+# Formatting revision (2026-07-14)
+
+Applied to all shipped files and to the generators (reruns produce the
+corrected formats natively):
+
+- `GroupId` renamed to `GroupID` in every file family.
+- Equity files: `RWLavel` renamed to `RWLabel` (normalised to the spelling
+  used by all other classes; interpretation of the correction request).
+- EQGAMMA / FXGAMMA / IRGAMMA: `RiskValue` is a plain numeric scalar;
+  `BucketCode` is the plain string `SINGLE` (no list wrapping). EQGAMMA
+  `RWLabel` is likewise a plain string (e.g. `5_SPOT`).
+- IRVEGA: `RiskValue` reshaped from a flat 25-element list to a nested
+  5x5 list, option-expiry (BucketCode) outer, underlying tenor
+  (BucketCode2) inner. `RWLabel` remains a flat 25-element list.
+- Delta and vega files otherwise keep their list-valued columns
+  (including EQDELTA's single-element lists) - unchanged as not covered
+  by the correction request.
+- `convert_to_parquet.py` updated to handle mixed scalar/list columns.
+
+---
+
+# Sector classification (added 2026-07-14)
+
+- `REF_UNIVERSE` / `REF_MARKET_DATA` (equity): `Sector` column — GICS-style
+  (11 sectors + `Index`); named tickers mapped individually, synthetic
+  small caps assigned a seeded random sector.
+- `REF_CSR_UNIVERSE` / `REF_CSR_MARKET_DATA` (credit): `SectorName` /
+  `Sector` column — readable labels (Sovereign, Local Government,
+  Financials, Basic Materials & Energy, Consumer, Technology & Telecom,
+  Health Care & Utilities, Covered Bonds, Credit Index IG/HY) alongside
+  the internal `Sector` code in the universe.
+- Descriptive metadata only: FRTB buckets encode CRR sector *groups*
+  (assigned independently) and are unchanged — no RWLabels or
+  sensitivities were touched. The GICS-style sector is finer-grained than
+  the CRR grouping, so several sectors map into one equity bucket.
